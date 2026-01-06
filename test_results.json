@@ -1,0 +1,39 @@
+{
+  "individual_results": [
+    {
+      "query": "My internet is very slow",
+      "generated_response": "Hello! I understand how frustrating a slow internet connection can be. I'm sorry you're experiencing this issue.\n\nTo start, and to ensure I can access your account details and begin troubleshooting, could you please **verify your identity**?\n\nOnce verified, I can look into your specific service plan and check for any known outages or issues in your area.\n\nIn the meantime, could you tell me a little more about the issue? Specifically:\n\n1. **Are you experiencing this slowness on all devices** connected to your Wi-Fi, or just one?\n2. **Is this happening constantly**, or only at certain times of the day?\n\nI'll do my best to help you resolve this issue quickly. Let me know when you're ready to verify your identity.",
+      "expected_answer": "Let me help you troubleshoot your slow internet connection.",
+      "context": "Customer: Hi Marilou, thanks for picking up. I've been having some problems with my phone service lately. I've been getting a lot of dropped calls, and my data connection has been really slow. It's been really frustrating.\nAgent: Sorry to hear that, Jessica. Let me see if I can help you with that. Can you please verify your identity so I can look into this further for you?\nCustomer: Hi, I'm having some issues with my phone service. I've been experiencing dropped calls, poor reception, and data connectivity problems.\nAgent: Sorry to hear that, Alissa. Can you please verify your identity for me? I'll do my best to help you resolve the issue.\nCustomer: Yeah, like I said, I've been experiencing dropped calls, poor reception, and data connectivity problems. It's been really frustrating.\nAgent: I understand how frustrating that must be for you. I me see what I can do to help. Can you tell me a little bit more about your phone and the areas where you're experiencing these issues?\nCustomer: Okay, let me check again. My account PIN is 5678.\nAgent: I apologize, but that doesn't seem to be working either. Can you please try one more time for me?\nCustomer: Alright, my account PIN is 9012.\nAgent: Thank you, Alissa. I'm now able to verify your identity. I see that you've had some issues with your phone service. Can you tell me a little bit more about what's been happening?",
+      "metrics": {
+        "query_coverage": 0.6666666666666666,
+        "context_recall": 0.3,
+        "answer_recall": 1.0
+      }
+    },
+    {
+      "query": "I can't connect to WiFi",
+      "generated_response": "I understand you're experiencing an issue with: \"I can't connect to WiFi\"\n\nI'm currently unable to access our knowledge base, but here are some general troubleshooting steps you can try:\n\n1. Restart your device\n2. Check your network connection\n3. Contact our support team at 1-800-HELP-NOW\n\nPlease provide more details about your issue, and I'll do my best to help you resolve it.",
+      "expected_answer": "I'll guide you through WiFi connection troubleshooting steps.",
+      "context": "Customer: Hi, I'm having some issues with my phone service. I've been experiencing dropped calls, poor reception, and data connectivity problems.\nAgent: Sorry to hear that, Alissa. Can you please verify your identity for me? I'll do my best to help you resolve the issue.\nCustomer: Yeah, like I said, I've been experiencing dropped calls, poor reception, and data connectivity problems. It's been really frustrating.\nAgent: I understand how frustrating that must be for you. I me see what I can do to help. Can you tell me a little bit more about your phone and the areas where you're experiencing these issues?\nCustomer: Okay, let me check again. My account PIN is 5678.\nAgent: I apologize, but that doesn't seem to be working either. Can you please try one more time for me?\nCustomer: Hi Marilou, thanks for picking up. I've been having some problems with my phone service lately. I've been getting a lot of dropped calls, and my data connection has been really slow. It's been really frustrating.\nAgent: Sorry to hear that, Jessica. Let me see if I can help you with that. Can you please verify your identity so I can look into this further for you?\nCustomer: Alright, my account PIN is 9012.\nAgent: Thank you, Alissa. I'm now able to verify your identity. I see that you've had some issues with your phone service. Can you tell me a little bit more about what's been happening?",
+      "metrics": {
+        "query_coverage": 1.0,
+        "context_recall": 0.4,
+        "answer_recall": 0.7142857142857143
+      }
+    }
+  ],
+  "aggregate_scores": {
+    "context_recall_mean": 0.35,
+    "context_recall_count": 2,
+    "query_coverage_mean": 0.8333333333333333,
+    "query_coverage_count": 2,
+    "answer_recall_mean": 0.8571428571428572,
+    "answer_recall_count": 2
+  },
+  "summary": {
+    "total_samples": 2,
+    "successful_evaluations": 2,
+    "failed_evaluations": 0
+  }
+}

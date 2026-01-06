@@ -1,0 +1,43 @@
+# Secrets and configuration
+config/secrets.yaml
+.env
+.env.local
+
+# Data and cache
+data/
+*.pkl
+*.h5
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Model checkpoints and embeddings
+models/
+embeddings/
+
+# Evaluation results
+evaluation_results.json
+results/

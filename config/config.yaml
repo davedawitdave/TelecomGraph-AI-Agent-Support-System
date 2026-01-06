@@ -1,0 +1,39 @@
+# Configuration file for RAG Telecom Support Assistant
+
+# Data configuration
+data:
+  cache_dir: "data/01_cache"
+  dataset_name: "eisenzopf/telecom-conversation-corpus"
+  local_dataset_path: "data/telecom_conversation_corpus"
+
+# Model configuration
+models:
+  embedding_model: "all-MiniLM-L6-v2"
+  llm_model: "gemini-2.5-flash-preview-09-2025"  # Stable 2025 model
+  embedding_dimension: 384
+
+# Neo4j configuration
+neo4j:
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: "password"
+
+# Retrieval configuration
+retrieval:
+  top_k_similar: 5
+  similarity_threshold: 0.7
+
+# Generation configuration
+generation:
+  max_tokens: 500
+  temperature: 0.7
+  system_prompt: "You are a helpful telecom customer support agent."
+
+# Evaluation configuration
+evaluation:
+  output_file: "evaluation_results.json"
+  metrics_to_compute:
+    - faithfulness
+    - relevancy
+    - answer_correctness
+    - answer_relevance
