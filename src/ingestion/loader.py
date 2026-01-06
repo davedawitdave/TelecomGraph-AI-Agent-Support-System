@@ -30,6 +30,8 @@ class DataLoader:
         self.dataset_name = "eisenzopf/telecom-conversation-corpus"
         self.cache_dir = config.get('data', {}).get('cache_dir', 'data/01_cache')
         self.local_dataset_path = Path("data/telecom_conversation_corpus")
+        self.debug_mode = config.get('data', {}).get('debug_mode', False)
+        self.debug_sample_size = config.get('data', {}).get('debug_sample_size', 1000)
 
     def load_dataset(self) -> Dict[str, Any]:
         """
@@ -67,6 +69,13 @@ class DataLoader:
 
             # Save to local storage for future use
             self._save_dataset_locally(dataset)
+
+            # Apply debug mode if enabled
+            if self.debug_mode:
+                print(f"Debug mode enabled: limiting to {self.debug_sample_size} samples")
+                dataset = dataset['train'].select(range(min(self.debug_sample_size, len(dataset['train']))))
+                return {'train': dataset}
+
             return dataset
 
         except Exception as e:
@@ -129,12 +138,21 @@ class DataLoader:
         """
         Get a sample of the dataset for testing purposes.
 
+        In debug mode, returns the already limited dataset.
+        Otherwise, returns a fresh sample of specified size.
+
         Args:
-            n_samples: Number of samples to retrieve.
+            n_samples: Number of samples to retrieve (ignored in debug mode).
 
         Returns:
             Sample dataset split.
         """
         dataset = self.load_dataset()
-        train_data = dataset['train']
+
+        # If debug mode was already applied during loading, return as-is
+        if self.debug_mode:
+            return dataset['train'] if isinstance(dataset, dict) else dataset
+
+        # Otherwise, take a fresh sample
+        train_data = dataset['train'] if isinstance(dataset, dict) else dataset
         return train_data.select(range(min(n_samples, len(train_data))))

@@ -5,6 +5,8 @@ data:
   cache_dir: "data/01_cache"
   dataset_name: "eisenzopf/telecom-conversation-corpus"
   local_dataset_path: "data/telecom_conversation_corpus"
+  debug_mode: false  # Set to true for testing with smaller dataset
+  debug_sample_size: 1000  # Number of samples for debug mode
 
 # Model configuration
 models:
