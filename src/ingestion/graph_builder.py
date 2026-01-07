@@ -25,32 +25,34 @@ class GraphBuilder:
     2. Creating structured relationships between entities
     3. Enabling graph traversal for context-aware retrieval
     """
+        # Class-level entity patterns
+    entity_patterns = {
+        'product': [
+            r'\b(?:router|modem|phone|mobile|internet|broadband|fiber|dsl|wifi|wireless|5g|4g|3g|sim|ethernet)\b',
+            r'\b(?:iphone|android|samsung|huawei|motorola|lg|nokia|oneplus|google pixel|xiaomi)\b',
+            r'\b(?:verizon|att|t-mobile|sprint|comcast|xfinity|spectrum|cox|centurylink)\b'
+        ],
+        'issue': [
+            r'\b(?:slow|speed|connection|disconnect|drop|buffering|lag|latency|jitter|packet loss)\b',
+            r'\b(?:bill|billing|charge|fee|cost|expensive|overcharge|payment|refund|credit)\b',
+            r'\b(?:data|plan|unlimited|throttling|limit|cap|usage|overage)\b',
+            r'\b(?:signal|reception|coverage|bars|network|dead zone|no service)\b'
+        ],
+        'resolution': [
+            'restart', 'reset', 'reboot', 'power cycle', 'unplug', 'check connection',
+            'update', 'factory reset', 'contact support', 'troubleshoot', 'diagnostic',
+            'password reset', 'account verification', 'service refresh'
+        ]
+    }
 
     def __init__(self, neo4j_config: Dict[str, str]):
         self.uri = neo4j_config['uri']
         self.username = neo4j_config['username']
         self.password = neo4j_config['password']
         self.driver = None
-        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')  # Lightweight embedder
+        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
-        # Entity extraction patterns for telecom domain
-        self.product_patterns = [
-            r'\b(?:router|modem|phone|mobile|internet|broadband|fiber|dsl|wifi|wireless)\b',
-            r'\b(?:iphone|android|samsung|huawei|motorola|lg)\b',
-            r'\b(?:verizon|att|t-mobile|sprint|comcast|xfinity)\b'
-        ]
-
-        self.issue_patterns = [
-            r'\b(?:slow|speed|connection|disconnect|drop|dropped|buffering|lag|latency)\b',
-            r'\b(?:bill|billing|charge|fee|cost|expensive|high)\b',
-            r'\b(?:data|plan|unlimited|throttling|limit)\b',
-            r'\b(?:signal|reception|coverage|bars|network)\b'
-        ]
-
-        self.resolution_keywords = [
-            'restart', 'reset', 'reboot', 'power cycle', 'unplug', 'check connection',
-            'update', 'factory reset', 'contact support', 'troubleshoot', 'diagnostic'
-        ]
+    
 
     def connect(self):
         """Establish connection to Neo4j"""
@@ -71,48 +73,19 @@ class GraphBuilder:
         if self.driver:
             self.driver.close()
             print("Disconnected from Neo4j")
-
+    
     def extract_entities(self, text: str) -> Dict[str, List[str]]:
-        """
-        Extract entities from text using pattern matching and keyword analysis.
-
-        Args:
-            text: Input text to analyze
-
-        Returns:
-            Dictionary with 'products', 'issues', 'resolutions' keys
-        """
+        """Extract entities from text using enhanced pattern matching."""
         text_lower = text.lower()
-
-        # Extract products/services
-        products = []
-        for pattern in self.product_patterns:
-            matches = re.findall(pattern, text_lower)
-            products.extend(matches)
-
-        # Extract issues
-        issues = []
-        for pattern in self.issue_patterns:
-            matches = re.findall(pattern, text_lower)
-            issues.extend(matches)
-
-        # Extract resolutions
-        resolutions = []
-        for keyword in self.resolution_keywords:
-            if keyword in text_lower:
-                resolutions.append(keyword)
-
+        entities = {key: [] for key in self.entity_patterns.keys()}
+        
+        for entity_type, patterns in self.entity_patterns.items():
+            for pattern in patterns:
+                matches = re.findall(pattern, text_lower)
+                entities[entity_type].extend(matches)
+        
         # Remove duplicates while preserving order
-        products = list(dict.fromkeys(products))
-        issues = list(dict.fromkeys(issues))
-        resolutions = list(dict.fromkeys(resolutions))
-
-        return {
-            'products': products,
-            'issues': issues,
-            'resolutions': resolutions
-        }
-
+        return {k: list(dict.fromkeys(v)) for k, v in entities.items()}
     def build_entity_relationships(self, conversation_pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Build entity relationships from conversation pairs for Graph RAG.
@@ -165,44 +138,7 @@ class GraphBuilder:
 
         return entity_graph
 
-    def build_graph(self, conversation_pairs: List[Dict[str, Any]]):
-        """
-        Build advanced Graph RAG knowledge graph with entity relationships.
 
-        Creates three layers:
-        1. Raw conversation storage (for vector search)
-        2. Entity extraction (Products, Issues, Resolutions)
-        3. Relationship modeling (how entities connect)
-        """
-        if not self.driver:
-            self.connect()
-
-        with self.driver.session() as session:
-            # Clear existing data
-            session.run("MATCH (n) DETACH DELETE n")
-
-            # Create constraints for entity uniqueness
-            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (c:Conversation) REQUIRE c.id IS UNIQUE")
-            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (p:Product) REQUIRE p.name IS UNIQUE")
-            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (i:Issue) REQUIRE i.name IS UNIQUE")
-            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (r:Resolution) REQUIRE r.name IS UNIQUE")
-
-            # Build entity relationships first
-            print("Extracting entities and building relationships...")
-            entity_graph = self.build_entity_relationships(conversation_pairs)
-
-            # Create entity nodes
-            session.execute_write(self._create_entity_nodes, entity_graph)
-
-            # Create conversation nodes with entity links
-            session.execute_write(self._create_conversation_nodes_with_entities, conversation_pairs, entity_graph)
-
-            # Create relationship edges between entities
-            session.execute_write(self._create_entity_relationships, entity_graph)
-
-        total_conversations = len(conversation_pairs)
-        total_entities = len(entity_graph['conversation_entities'])
-        print(f"Created advanced Graph RAG with {total_conversations} conversations and {total_entities} entity-mapped conversations")
 
     def _create_conversation_nodes(self, tx, batch: List[Dict[str, Any]]):
         """Create conversation nodes and relationships in Neo4j"""
@@ -325,58 +261,45 @@ class GraphBuilder:
 
     def _create_entity_nodes(self, tx, entity_graph: Dict[str, Any]):
         """Create entity nodes (Products, Issues, Resolutions)"""
-        # Collect all unique products
-        all_products = set()
-        for product in entity_graph['product_issue_links'].keys():
-            all_products.add(product)
-
-        for product in all_products:
-            product_embedding = self.embedder.encode(f"telecom product {product}").tolist()
+        # Create product nodes
+        for product in set().union(*[set(issues) for issues in entity_graph['product_issue_links'].values()]):
+            embedding = self.embedder.encode(f"telecom product {product}").tolist()
             tx.run("""
                 MERGE (p:Product {name: $name})
                 SET p.embedding = $embedding,
                     p.type = 'product',
                     p.created_at = datetime()
-                """,
-                name=product,
-                embedding=product_embedding
-            )
+                """, name=product, embedding=embedding)
 
-        # Collect all unique issues
+        # Create issue nodes
         all_issues = set()
         for issues in entity_graph['product_issue_links'].values():
             all_issues.update(issues)
         all_issues.update(entity_graph['issue_resolution_links'].keys())
-
+        
         for issue in all_issues:
-            issue_embedding = self.embedder.encode(f"telecom issue {issue}").tolist()
+            embedding = self.embedder.encode(f"telecom issue {issue}").tolist()
             tx.run("""
                 MERGE (i:Issue {name: $name})
                 SET i.embedding = $embedding,
                     i.type = 'issue',
                     i.created_at = datetime()
-                """,
-                name=issue,
-                embedding=issue_embedding
-            )
+                """, name=issue, embedding=embedding)
 
-        # Collect all unique resolutions
+        # Create resolution nodes
         all_resolutions = set()
         for resolutions in entity_graph['issue_resolution_links'].values():
             all_resolutions.update(resolutions)
-
+            
         for resolution in all_resolutions:
-            resolution_embedding = self.embedder.encode(f"telecom resolution {resolution}").tolist()
+            embedding = self.embedder.encode(f"telecom resolution {resolution}").tolist()
             tx.run("""
                 MERGE (r:Resolution {name: $name})
                 SET r.embedding = $embedding,
                     r.type = 'resolution',
                     r.created_at = datetime()
-                """,
-                name=resolution,
-                embedding=resolution_embedding
-            )
-
+                """, name=resolution, embedding=embedding)
+    
     def _create_conversation_nodes_with_entities(self, tx, conversation_pairs: List[Dict[str, Any]], entity_graph: Dict[str, Any]):
         """Create conversation nodes linked to extracted entities"""
         for pair in conversation_pairs:
@@ -474,56 +397,62 @@ class GraphBuilder:
 
     def search_graph_rag(self, query: str, limit: int = 5) -> Dict[str, Any]:
         """
-        Advanced Graph RAG search that uses entity relationships.
+        Advanced Graph RAG search that uses entity relationships and vector similarity.
 
         Args:
             query: User query
-            limit: Maximum results to return
+            limit: Maximum number of results to return
 
         Returns:
-            Dictionary with graph-based results and entity relationships
+            Dictionary containing matching conversations and related entities
         """
         if not self.driver:
             self.connect()
 
         # Extract entities from query
         query_entities = self.extract_entities(query)
+        query_embedding = self.embedder.encode(query).tolist()
 
         with self.driver.session() as session:
-            # Find conversations that match entity patterns
-            graph_results = session.run("""
-                MATCH (conv:Conversation)-[:HAS_ISSUE]->(issue:Issue)
-                WHERE ANY(entity IN $query_issues WHERE entity IN conv.issues)
-                RETURN conv.id as conversation_id,
-                       conv.client_message as client_message,
-                       conv.agent_response as agent_response,
-                       conv.issues as issues,
-                       conv.resolutions as resolutions,
-                       size([x IN conv.issues WHERE x IN $query_issues]) as issue_match_count
-                ORDER BY issue_match_count DESC, conv.created_at DESC
+            # Find similar conversations using vector search
+            results = session.run("""
+                MATCH (c:Conversation)
+                WITH c, gds.similarity.cosine(c.client_embedding, $embedding) AS similarity
+                WHERE similarity > 0.7
+                RETURN c, similarity
+                ORDER BY similarity DESC
                 LIMIT $limit
-                """,
-                query_issues=query_entities['issues'],
+                """, 
+                embedding=query_embedding, 
                 limit=limit
             )
 
-            # Get related resolutions for matched issues
-            related_resolutions = []
-            if query_entities['issues']:
-                resolution_results = session.run("""
-                    MATCH (issue:Issue)-[:HAS_RESOLUTION]->(resolution:Resolution)
-                    WHERE issue.name IN $query_issues
-                    RETURN resolution.name as resolution,
-                           count(*) as frequency
-                    ORDER BY frequency DESC
-                    LIMIT 5
-                    """,
-                    query_issues=query_entities['issues']
-                )
-                related_resolutions = [record.data() for record in resolution_results]
+            conversations = [{
+                'conversation_id': record['c']['id'],
+                'client_message': record['c']['client_message'],
+                'agent_response': record['c']['agent_response'],
+                'similarity': float(record['similarity'])
+            } for record in results]
+
+            # Find related entities
+            related_entities = []
+            if query_entities.get('product') or query_entities.get('issue'):
+                # Find related issues and resolutions based on query entities
+                related_entities = session.run("""
+                    MATCH (p:Product)-[r1:HAS_ISSUE]->(i:Issue)-[r2:HAS_RESOLUTION]->(r:Resolution)
+                    WHERE p.name IN $products OR i.name IN $issues
+                    RETURN p.name as product, i.name as issue, r.name as resolution,
+                           r1.frequency as issue_freq, r2.frequency as resolution_freq,
+                           r1.frequency * r2.frequency as relevance_score
+                    ORDER BY relevance_score DESC
+                    LIMIT 10
+                    """, 
+                    products=query_entities.get('product', []),
+                    issues=query_entities.get('issue', [])
+                ).data()
 
             return {
-                'graph_conversations': [record.data() for record in graph_results],
-                'related_resolutions': related_resolutions,
+                'conversations': conversations,
+                'related_entities': related_entities,
                 'query_entities': query_entities
             }
