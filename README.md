@@ -1,47 +1,198 @@
-# RAG Telecom Support Assistant
+# Telecom Support RAG System
 
-A Retrieval-Augmented Generation (RAG) system for telecom customer support that uses Neo4j graph database and OpenAI GPT models to provide intelligent responses based on historical conversation data.
+A Retrieval-Augmented Generation (RAG) system for telecom customer support using Neo4j graph database and LLMs.
 
-## Features
+## System Architecture
 
-- **Data Ingestion**: Load and process telecom conversation datasets from Hugging Face
-- **Graph Database**: Store conversation pairs in Neo4j with vector embeddings
-- **Vector Search**: Find similar customer issues using semantic similarity
-- **LLM Generation**: Generate contextual responses using GPT models
-- **Evaluation**: Comprehensive metrics including faithfulness and relevancy
-- **Streamlit UI**: User-friendly web interface for customer support
+### 1. Data Ingestion & Processing
+
+```python
+# In pipeline.py
+def run(self, query: str) -> str:
+    # 1. Load and preprocess data
+    raw_data = self.loader.load_data()
+    processed_data = self.processor.process(raw_data)
+    
+    # 2. Build knowledge graph
+    self.graph_builder.build_knowledge_graph(processed_data)
+```
+
+### 2. Graph Construction
+
+```python
+def build_knowledge_graph(self, conversations: List[Dict]):
+    with self.driver.session() as session:
+        # 2.1 Create conversation and message nodes
+        session.write_transaction(
+            self._create_conversation_nodes, 
+            conversations
+        )
+        
+        # 2.2 Extract and link entities
+        entity_graph = self.build_entity_relationships(conversations)
+        session.write_transaction(
+            self._create_entity_relationships,
+            entity_graph
+        )
+```
+
+### 3. Search Flow
+
+```python
+def find_similar_issues(self, query: str, top_k: int = 5):
+    # 3.1 First try Graph RAG search
+    graph_results = self.graph_builder.search_graph_rag(query, top_k)
+    
+    # 3.2 Fallback to vector search if needed
+    if not graph_results['graph_conversations']:
+        vector_results = self.graph_builder.search_similar_issues(query, top_k)
+        return self._format_vector_results(vector_results)
+    
+    return self._format_graph_results(graph_results)
+```
+
+### 4. Graph-based Search
+
+```python
+def search_graph_rag(self, query: str, limit: int):
+    # 4.1 Get query embedding
+    query_embedding = self.embedder.encode(query).tolist()
+    
+    # 4.2 Find similar messages using vector search
+    similar_messages = self._find_similar_messages(
+        query_embedding, 
+        limit * 2  # Get more results for filtering
+    )
+    
+    # 4.3 Get agent responses for top matches
+    results = []
+    with self.driver.session() as session:
+        for msg in similar_messages:
+            response = session.read_transaction(
+                self._get_agent_response,
+                msg['msg_id']
+            )
+            if response:
+                results.append({
+                    'client_message': msg['text'],
+                    'agent_response': response,
+                    'similarity': msg['similarity']
+                })
+    
+    return results[:limit]
+```
+
+### 5. Response Generation
+
+```python
+def generate_response(self, query: str, context: List[Dict]) -> str:
+    # 5.1 Format context
+    context_str = "\n\n".join(
+        f"User: {item['client_message']}\nAgent: {item['agent_response']}"
+        for item in context
+    )
+    
+    # 5.2 Generate response using LLM
+    prompt = f"""Based on the following support conversations, provide a helpful response to: {query}
+    
+    Previous Conversations:
+    {context_str}"""
+    
+    return self.llm.generate(prompt)
+```
+
+## Data Model
+
+### Core Nodes
+- **Conversation**
+  - `id`: Unique identifier
+  - `timestamp`: Creation time
+  - `customer_id`: Customer identifier
+  - `status`: Conversation status
+
+- **Message**
+  - `id`: Unique identifier
+  - `text`: Message content
+  - `type`: "client" or "agent"
+  - `timestamp`: Message time
+  - `embedding`: Vector embedding (384d)
+
+- **Entity Types**
+  - `Product`: e.g., "Router", "5G Plan"
+  - `Issue`: e.g., "Slow Internet", "Billing Error"
+  - `Resolution`: e.g., "Reset Router", "Update Plan"
+
+### Relationships
+- `(:Message)-[:PART_OF]->(:Conversation)`
+- `(:Message)-[:MENTIONS]->(:Product|Issue|Resolution)`
+- `(:Message)-[:RESPONDS_TO]->(:Message)`
+- `(:Product)-[:HAS_ISSUE]->(:Issue)`
+- `(:Issue)-[:HAS_RESOLUTION]->(:Resolution)`
+
+## Complete Flow
+
+1. **User Query** → `pipeline.run(query)` 
+   - Loads and processes data
+   - Builds/updates knowledge graph
+
+2. **Search** → `vector_search.find_similar_issues(query)` 
+   - Tries graph-based search first
+   - Falls back to vector search if needed
+
+3. **Graph Search** → `graph_builder.search_graph_rag()`
+   - Encodes query to vector
+   - Finds similar messages using vector similarity
+   - Retrieves corresponding agent responses
+
+4. **Response Generation** → `llm_generator.generate_response()`
+   - Formats context
+   - Generates final response using LLM
+
+### Key Data Flow:
+```
+User Query 
+  → Vector Embedding 
+  → Similarity Search 
+  → Context Retrieval 
+  → LLM Generation 
+  → Final Response
+```
 
 ## Project Structure
 
 ```
-rag-project-root/
+telecom-rag/
 ├── config/
-│   ├── config.yaml          # Application configuration
-│   └── secrets.yaml         # API keys and secrets
-├── data/
-│   ├── 01_cache/            # Hugging Face dataset cache
-│   └── telecom_conversation_corpus/  # Local dataset storage
+│   ├── config.yaml         # App configuration
+│   └── secrets.yaml        # API keys and credentials
+├── data/                   # Data storage
+│   ├── raw/               # Raw conversation data
+│   └── processed/         # Processed datasets
 ├── src/
-│   ├── ingestion/
-│   │   ├── loader.py        # Local/remote dataset loading with fallback
-│   │   ├── processor.py     # Conversation pair extraction
-│   │   └── graph_builder.py # Neo4j graph construction
-│   ├── retrieval/
-│   │   └── search.py        # Vector similarity search
-│   ├── generation/
-│   │   └── llm.py           # LLM response generation
-│   ├── evaluation/          # Evaluation framework
-│   │   ├── metrics.py       # Faithfulness, relevancy metrics
-│   │   └── run_eval.py      # Evaluation pipeline
-│   └── pipeline.py          # Main RAG orchestrator
-├── app.py                   # Streamlit web application
-├── setup.py                 # Automated setup script
-├── test_pipeline.py         # Component testing script
-├── example_usage.py         # Usage examples and demos
-├── .gitignore              # Git ignore rules
-├── README.md               # This documentation
-└── requirements.txt        # Python dependencies
+│   ├── ingestion/         # Data loading and processing
+│   ├── retrieval/         # Vector and graph search
+│   ├── generation/        # LLM response generation
+│   └── evaluation/        # System evaluation
+├── app.py                 # Streamlit web interface
+├── requirements.txt       # Python dependencies
+└── README.md             # This documentation
 ```
+
+## Setup
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Configure Neo4j:
+   - Install Neo4j Desktop or Server
+   - Update `config/secrets.yaml` with your credentials
+
+3. Run the application:
+   ```bash
+   streamlit run app.py
+   ```
 
 ## Quick Start
 

@@ -152,6 +152,7 @@ class GraphBuilder:
             MERGE (client_msg:Message {
                 text: $client_msg,
                 type: 'client',
+                
                 embedding: $client_embedding
             })
             MERGE (agent_msg:Message {
@@ -393,6 +394,7 @@ class GraphBuilder:
                     issue=issue,
                     resolution=resolution,
                     count=count
+
                 )
 
     def search_graph_rag(self, query: str, limit: int = 5) -> Dict[str, Any]:

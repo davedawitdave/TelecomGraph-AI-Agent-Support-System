@@ -118,7 +118,7 @@ class LLMGenerator:
             if context:
                 system_instruction = """You are a helpful telecom support assistant. 
                 Use the provided context to answer the user's question. 
-                If the context doesn't contain the answer, say you don't know."""
+                If the context doesn't contain the answer, try your best give the default answer."""
                 prompt = f"""Context:
 {context}
 
