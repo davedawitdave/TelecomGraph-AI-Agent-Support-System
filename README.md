@@ -6,100 +6,36 @@ A Retrieval-Augmented Generation (RAG) system for telecom customer support using
 
 ### 1. Data Ingestion & Processing
 
-```python
-# In pipeline.py
-def run(self, query: str) -> str:
-    # 1. Load and preprocess data
-    raw_data = self.loader.load_data()
-    processed_data = self.processor.process(raw_data)
-    
-    # 2. Build knowledge graph
-    self.graph_builder.build_knowledge_graph(processed_data)
-```
+1. **Data Loading**: The system loads raw conversation data from the configured data source
+2. **Preprocessing**: Raw data is cleaned and formatted into structured conversation pairs
+3. **Knowledge Graph Update**: The processed data is used to build or update the knowledge graph
 
 ### 2. Graph Construction
 
-```python
-def build_knowledge_graph(self, conversations: List[Dict]):
-    with self.driver.session() as session:
-        # 2.1 Create conversation and message nodes
-        session.write_transaction(
-            self._create_conversation_nodes, 
-            conversations
-        )
-        
-        # 2.2 Extract and link entities
-        entity_graph = self.build_entity_relationships(conversations)
-        session.write_transaction(
-            self._create_entity_relationships,
-            entity_graph
-        )
-```
+1. **Node Creation**: Creates conversation and message nodes in Neo4j
+2. **Entity Extraction**: Identifies and extracts key entities (products, issues, resolutions)
+3. **Relationship Building**: Establishes connections between messages and entities
+4. **Vector Embeddings**: Generates and stores vector embeddings for semantic search
 
 ### 3. Search Flow
 
-```python
-def find_similar_issues(self, query: str, top_k: int = 5):
-    # 3.1 First try Graph RAG search
-    graph_results = self.graph_builder.search_graph_rag(query, top_k)
-    
-    # 3.2 Fallback to vector search if needed
-    if not graph_results['graph_conversations']:
-        vector_results = self.graph_builder.search_similar_issues(query, top_k)
-        return self._format_vector_results(vector_results)
-    
-    return self._format_graph_results(graph_results)
-```
+1. **Initial Search**: Attempts to find relevant context using graph-based search
+2. **Fallback Mechanism**: If graph search returns insufficient results, falls back to vector similarity search
+3. **Result Formatting**: Returns formatted search results with similarity scores
 
 ### 4. Graph-based Search
 
-```python
-def search_graph_rag(self, query: str, limit: int):
-    # 4.1 Get query embedding
-    query_embedding = self.embedder.encode(query).tolist()
-    
-    # 4.2 Find similar messages using vector search
-    similar_messages = self._find_similar_messages(
-        query_embedding, 
-        limit * 2  # Get more results for filtering
-    )
-    
-    # 4.3 Get agent responses for top matches
-    results = []
-    with self.driver.session() as session:
-        for msg in similar_messages:
-            response = session.read_transaction(
-                self._get_agent_response,
-                msg['msg_id']
-            )
-            if response:
-                results.append({
-                    'client_message': msg['text'],
-                    'agent_response': response,
-                    'similarity': msg['similarity']
-                })
-    
-    return results[:limit]
-```
+1. **Query Processing**: Converts the user query into a vector embedding
+2. **Similarity Search**: Finds the most similar messages using vector similarity
+3. **Context Enrichment**: Retrieves associated agent responses for the matched messages
+4. **Result Ranking**: Ranks results based on relevance and similarity scores
 
 ### 5. Response Generation
 
-```python
-def generate_response(self, query: str, context: List[Dict]) -> str:
-    # 5.1 Format context
-    context_str = "\n\n".join(
-        f"User: {item['client_message']}\nAgent: {item['agent_response']}"
-        for item in context
-    )
-    
-    # 5.2 Generate response using LLM
-    prompt = f"""Based on the following support conversations, provide a helpful response to: {query}
-    
-    Previous Conversations:
-    {context_str}"""
-    
-    return self.llm.generate(prompt)
-```
+1. **Context Preparation**: Formats the retrieved context for the LLM
+2. **Prompt Engineering**: Constructs a detailed prompt with conversation history
+3. **LLM Generation**: Uses the language model to generate a contextual response
+4. **Response Refinement**: Ensures the response is relevant and properly formatted
 
 ## Data Model
 
