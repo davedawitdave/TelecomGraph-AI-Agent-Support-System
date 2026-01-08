@@ -1,189 +1,232 @@
+# src/evaluation/run_eval.py
 """
-Evaluation Runner for RAG Pipeline
-Runs the pipeline against test data and computes metrics
+Standalone RAG Pipeline Evaluation Script
+
+This script evaluates the RAG pipeline by comparing generated responses against expected answers.
+It reads test cases from a JSON file and calculates recall metrics.
+
+Usage:
+    python -m src.evaluation.run_eval --test-file evaluation/test_queries.json
 """
 
-from typing import List, Dict, Any, Tuple
 import json
 import os
-from .metrics import EvaluationMetrics
+import argparse
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 
-class Evaluator:
-    def __init__(self, pipeline, metrics_calculator: EvaluationMetrics):
-        self.pipeline = pipeline
-        self.metrics = metrics_calculator
+class EvaluationMetrics:
+    """
+    Simple evaluation metrics focused on recall.
+    """
+    def __init__(self):
+        pass
 
-    def evaluate(self, test_data: List[Dict[str, Any]],
-                output_file: str = "evaluation_results.json") -> Dict[str, Any]:
-        """Run evaluation on test data"""
-        print(f"Starting evaluation on {len(test_data)} test samples...")
-
-        results = []
-        for i, test_case in enumerate(test_data):
-            print(f"Evaluating sample {i+1}/{len(test_data)}")
-
-            # Generate response
-            query = test_case.get('query', '')
-            expected_answer = test_case.get('expected_answer', '')
-
-            try:
-                generated_response = self.pipeline.generate_response(query)
-
-                # Get context from similar issues (if available)
-                similar_issues = self.pipeline.search.find_similar_issues(query)
-                context = self._format_context(similar_issues)
-
-                # Calculate simple recall-based metrics
-                metrics = {}
-
-                # Query coverage - how well response addresses the original query
-                metrics['query_coverage'] = self.metrics.calculate_query_coverage(
-                    generated_response, query
-                )
-
-                # Context recall - how well response uses provided context
-                if context:
-                    metrics['context_recall'] = self.metrics.calculate_context_recall(
-                        generated_response, context
-                    )
-
-                # Answer recall - how well response matches expected answer (if available)
-                if expected_answer:
-                    metrics['answer_recall'] = self.metrics.calculate_recall(
-                        generated_response, expected_answer
-                    )
-
-                result = {
-                    'query': query,
-                    'generated_response': generated_response,
-                    'expected_answer': expected_answer,
-                    'context': context,
-                    'metrics': metrics
-                }
-
-                results.append(result)
-
-            except Exception as e:
-                print(f"Error evaluating sample {i+1}: {e}")
-                results.append({
-                    'query': query,
-                    'error': str(e),
-                    'metrics': {}
-                })
-
-        # Calculate simple aggregate metrics
-        aggregate_scores = self._calculate_simple_aggregates(
-            [r['metrics'] for r in results if 'metrics' in r]
-        )
-
-        final_results = {
-            'individual_results': results,
-            'aggregate_scores': aggregate_scores,
-            'summary': {
-                'total_samples': len(test_data),
-                'successful_evaluations': len([r for r in results if 'generated_response' in r]),
-                'failed_evaluations': len([r for r in results if 'error' in r])
-            }
-        }
-
-        # Save results
-        self._save_results(final_results, output_file)
-
-        print("Evaluation complete!")
-        self._print_summary(final_results)
-
-        return final_results
-
-    def _calculate_simple_aggregates(self, evaluations: List[Dict[str, float]]) -> Dict[str, float]:
+    def calculate_recall(self, predicted: str, expected: str) -> float:
         """
-        Calculate simple aggregate statistics for evaluation metrics.
+        Calculate recall score - how many key elements from expected answer
+        are present in the predicted answer.
 
         Args:
-            evaluations: List of evaluation result dictionaries
+            predicted: Generated response text
+            expected: Expected/ground truth text
 
         Returns:
-            Dictionary with mean scores for each metric
+            Recall score between 0.0 and 1.0
         """
-        if not evaluations:
-            return {}
+        if not predicted or not expected:
+            return 0.0
 
-        # Collect all metric names
-        all_metrics = set()
-        for eval_result in evaluations:
-            all_metrics.update(eval_result.keys())
+        # Simple word-level recall
+        expected_words = set(word.lower() for word in expected.split() if len(word) > 3)
+        if not expected_words:
+            return 0.0
 
-        aggregate_scores = {}
-        for metric in all_metrics:
-            values = [eval_result.get(metric, 0.0) for eval_result in evaluations if metric in eval_result]
-            if values:
-                aggregate_scores[f"{metric}_mean"] = sum(values) / len(values)
-                aggregate_scores[f"{metric}_count"] = len(values)
+        predicted_words = set(word.lower() for word in predicted.split())
+        if not predicted_words:
+            return 0.0
 
-        return aggregate_scores
+        # Calculate recall
+        matching_words = expected_words.intersection(predicted_words)
+        return len(matching_words) / len(expected_words)
 
-    def _format_context(self, similar_issues: List[Dict[str, Any]]) -> str:
-        """Format similar issues into context string"""
-        if not similar_issues:
-            return ""
+class RAGEvaluator:
+    """
+    Standalone RAG pipeline evaluator.
+    """
+    def __init__(self):
+        self.metrics = EvaluationMetrics()
+        self.results_dir = Path("evaluation/results")
+        self.results_dir.mkdir(parents=True, exist_ok=True)
 
-        context_parts = []
-        for issue in similar_issues:
-            context_parts.append(f"Customer: {issue.get('client_message', '')}")
-            context_parts.append(f"Agent: {issue.get('agent_response', '')}")
-
-        return "\n".join(context_parts)
-
-    def _save_results(self, results: Dict[str, Any], output_file: str):
-        """Save evaluation results to file"""
+    def load_test_cases(self, test_file: str) -> List[Dict[str, Any]]:
+        """
+        Load test cases from a JSON file.
+        
+        Expected format:
+        [
+            {
+                "query": "What is the status of my order?",
+                "expected_answer": "Your order #123 is in transit",
+                "generated_response": "The order #123 is currently being shipped"
+            },
+            ...
+        ]
+        """
         try:
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2)
-            print(f"Results saved to {output_file}")
+            with open(test_file, 'r') as f:
+                test_cases = json.load(f)
+            
+            # Validate test cases
+            valid_cases = []
+            for i, case in enumerate(test_cases, 1):
+                if not isinstance(case, dict):
+                    print(f"Warning: Test case {i} is not a dictionary, skipping")
+                    continue
+                
+                if 'query' not in case or 'expected_answer' not in case or 'generated_response' not in case:
+                    print(f"Warning: Test case {i} is missing required fields, skipping")
+                    continue
+                
+                valid_cases.append(case)
+            
+            return valid_cases
+            
         except Exception as e:
-            print(f"Error saving results: {e}")
-
-    def _print_summary(self, results: Dict[str, Any]):
-        """Print evaluation summary"""
-        summary = results['summary']
-        aggregates = results['aggregate_scores']
-
-        print("\n" + "="*50)
-        print("EVALUATION SUMMARY")
-        print("="*50)
-        print(f"Total samples: {summary['total_samples']}")
-        print(f"Successful evaluations: {summary['successful_evaluations']}")
-        print(f"Failed evaluations: {summary['failed_evaluations']}")
-
-        print("\nAGGREGATE METRICS:")
-        for metric_name, value in aggregates.items():
-            if isinstance(value, (int, float)):
-                print(".3f")
-
-        print("="*50)
-
-    def load_test_data(self, file_path: str) -> List[Dict[str, Any]]:
-        """Load test data from JSON file"""
-        try:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            return data
-        except Exception as e:
-            print(f"Error loading test data: {e}")
+            print(f"Error loading test cases: {str(e)}")
             return []
 
-    def create_sample_test_data(self) -> List[Dict[str, Any]]:
-        """Create sample test data for evaluation"""
-        return [
-            {
-                "query": "My internet is very slow",
-                "expected_answer": "Let me help you troubleshoot your slow internet connection."
-            },
-            {
-                "query": "I can't connect to WiFi",
-                "expected_answer": "I'll guide you through WiFi connection troubleshooting steps."
-            },
-            {
-                "query": "My phone bill is too high",
-                "expected_answer": "I can help you review your bill and identify any unexpected charges."
-            }
-        ]
+    def evaluate(self, test_cases: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Evaluate test cases and calculate metrics.
+        """
+        results = {
+            'evaluation_time': datetime.utcnow().isoformat(),
+            'total_cases': len(test_cases),
+            'evaluated_cases': 0,
+            'average_recall': 0.0,
+            'test_cases': []
+        }
+        
+        total_recall = 0.0
+        
+        for case in test_cases:
+            query = case.get('query', '')
+            expected = case.get('expected_answer', '')
+            generated = case.get('generated_response', '')
+            
+            try:
+                # Calculate recall
+                recall = self.metrics.calculate_recall(generated, expected)
+                total_recall += recall
+                results['evaluated_cases'] += 1
+                
+                # Store results
+                result = {
+                    'query': query,
+                    'expected_answer': expected,
+                    'generated_response': generated,
+                    'recall': recall,
+                    'success': True
+                }
+                
+                results['test_cases'].append(result)
+                print(f"Query: {query[:60]}... | Recall: {recall:.2f}")
+                
+            except Exception as e:
+                print(f"Error evaluating query: {str(e)}")
+                results['test_cases'].append({
+                    'query': query,
+                    'error': str(e),
+                    'success': False
+                })
+        
+        # Calculate average recall
+        if results['evaluated_cases'] > 0:
+            results['average_recall'] = total_recall / results['evaluated_cases']
+        
+        return results
+
+    def save_results(self, results: Dict[str, Any], output_file: Optional[str] = None) -> str:
+        """
+        Save evaluation results to a JSON file.
+        """
+        if not output_file:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = self.results_dir / f"eval_results_{timestamp}.json"
+        
+        with open(output_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        return str(output_file)
+
+    def print_summary(self, results: Dict[str, Any]) -> None:
+        """Print a summary of the evaluation results."""
+        print("\n" + "="*50)
+        print("RAG Pipeline Evaluation Summary")
+        print("="*50)
+        print(f"Evaluation Time: {results.get('evaluation_time', 'N/A')}")
+        print(f"Total Test Cases: {results.get('total_cases', 0)}")
+        print(f"Successfully Evaluated: {results.get('evaluated_cases', 0)}")
+        print(f"Average Recall: {results.get('average_recall', 0.0):.4f}")
+        
+        # Print top and bottom performing cases
+        test_cases = results.get('test_cases', [])
+        if test_cases:
+            # Sort by recall (highest first)
+            sorted_cases = sorted(
+                [c for c in test_cases if c.get('success', False)],
+                key=lambda x: x.get('recall', 0),
+                reverse=True
+            )
+            
+            if sorted_cases:
+                print("\nTop Performing Queries:")
+                for i, case in enumerate(sorted_cases[:3], 1):
+                    print(f"  {i}. Recall: {case.get('recall', 0):.2f} - {case.get('query', '')[:60]}...")
+                
+                print("\nBottom Performing Queries:")
+                for i, case in enumerate(sorted_cases[-3:], 1):
+                    print(f"  {i}. Recall: {case.get('recall', 0):.2f} - {case.get('query', '')[:60]}...")
+
+def main():
+    """Command-line interface for running evaluations."""
+    parser = argparse.ArgumentParser(description='Evaluate RAG Pipeline')
+    parser.add_argument(
+        '--test-file',
+        type=str,
+        required=True,
+        help='Path to JSON file containing test cases with expected answers and generated responses'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        help='Output file for evaluation results (default: evaluation/results/eval_results_<timestamp>.json)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Initialize evaluator
+    evaluator = RAGEvaluator()
+    
+    # Load test cases
+    test_cases = evaluator.load_test_cases(args.test_file)
+    if not test_cases:
+        print("No valid test cases found. Exiting.")
+        return
+    
+    print(f"Loaded {len(test_cases)} test cases for evaluation")
+    
+    # Run evaluation
+    results = evaluator.evaluate(test_cases)
+    
+    # Save results
+    output_file = evaluator.save_results(results, args.output)
+    
+    # Print summary
+    evaluator.print_summary(results)
+    print(f"\nDetailed results saved to: {output_file}")
+
+if __name__ == "__main__":
+    main()

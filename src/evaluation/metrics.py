@@ -6,7 +6,7 @@ Basic recall-based evaluation techniques
 import re
 from typing import Dict, List, Any
 from collections import Counter
-
+import numpy as np
 
 class EvaluationMetrics:
     """
@@ -133,6 +133,104 @@ class EvaluationMetrics:
             return [keyword for keyword, _ in keyword_counts.most_common(10)]
 
         return keywords
+
+    def calculate_faithfulness(self, response: str, context: str) -> float:
+        """
+        Calculate faithfulness - how well the response stays true to the provided context.
+        Measures whether the response contains information not present in the context.
+
+        Args:
+            response: Generated response text
+            context: Context information provided
+
+        Returns:
+            Faithfulness score between 0.0 and 1.0
+        """
+        if not response or not context:
+            return 0.0
+
+        # Extract key facts/statements from response
+        response_sentences = self._extract_sentences(response)
+        context_sentences = self._extract_sentences(context)
+
+        if not response_sentences:
+            return 1.0  # Empty response is considered faithful
+
+        # For each response sentence, check if it can be supported by context
+        faithful_sentences = 0
+        for resp_sentence in response_sentences:
+            resp_keywords = set(self._extract_keywords(resp_sentence))
+
+            # Check if this sentence's key information appears in context
+            sentence_supported = False
+            for ctx_sentence in context_sentences:
+                ctx_keywords = set(self._extract_keywords(ctx_sentence))
+                # If significant overlap in keywords, consider it supported
+                if len(resp_keywords.intersection(ctx_keywords)) / len(resp_keywords) > 0.3:
+                    sentence_supported = True
+                    break
+
+            if sentence_supported:
+                faithful_sentences += 1
+
+        return faithful_sentences / len(response_sentences)
+
+    def calculate_relevancy(self, response: str, query: str) -> float:
+        """
+        Calculate relevancy - how relevant the response is to the query.
+
+        Args:
+            response: Generated response text
+            query: Original user query
+
+        Returns:
+            Relevancy score between 0.0 and 1.0
+        """
+        return self.calculate_query_coverage(response, query)
+
+    def calculate_answer_correctness(self, response: str, expected_answer: str) -> float:
+        """
+        Calculate answer correctness - semantic similarity to expected answer.
+
+        Args:
+            response: Generated response text
+            expected_answer: Expected/ground truth answer
+
+        Returns:
+            Correctness score between 0.0 and 1.0
+        """
+        return self.calculate_recall(response, expected_answer)
+
+    def calculate_answer_relevance(self, response: str, expected_answer: str) -> float:
+        """
+        Calculate answer relevance - how well the response addresses the expected answer's key points.
+
+        Args:
+            response: Generated response text
+            expected_answer: Expected/ground truth answer
+
+        Returns:
+            Relevance score between 0.0 and 1.0
+        """
+        if not response or not expected_answer:
+            return 0.0
+
+        # Extract key concepts from expected answer
+        expected_keywords = set(self._extract_keywords(expected_answer))
+        response_keywords = set(self._extract_keywords(response))
+
+        if not expected_keywords:
+            return 1.0 if response_keywords else 0.0
+
+        # Calculate overlap
+        overlap = len(expected_keywords.intersection(response_keywords))
+        return overlap / len(expected_keywords)
+
+    def _extract_sentences(self, text: str) -> List[str]:
+        """Extract sentences from text"""
+        import re
+        sentences = re.split(r'[.!?]+', text)
+        return [s.strip() for s in sentences if s.strip()]
 
     def evaluate_response(self, query: str, response: str,
                          context: str = "", expected_answer: str = "") -> Dict[str, float]:
